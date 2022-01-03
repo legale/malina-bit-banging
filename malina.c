@@ -67,7 +67,7 @@ int main(int argc, char **argv){
 	else if (strcmp("switch", argv[i]) == 0 && (i + 1) < argc){ gpio_switch(gpio, atoi(argv[++i])); }
 	else if (strcmp("-h", argv[i]) == 0) {help(); }
 	else if (strcmp("--help", argv[i]) == 0) {help(); }
-	else 	{printf("command not found\n");}
+	else 	{printf("%s command not found\n", argv[i]);}
   }
   return 0;
 }
@@ -190,12 +190,12 @@ void write_page(void *gpio, char *filename, uint32_t page, uint32_t length){
     nsleep(tADL); /* delay Address Data Loading  */
 
     /* send data */
-    byte = fgetc(fp);
     int i = 0;
-    while(feof(fp) == 0 && i < length){
+    while(i < length){
+        byte = fgetc(fp);
+        if(feof(fp)) break;
         nand_write_byte(gpio, byte);
         DEBUG_PRINT("%d '%c' \n", i++, byte);
-        byte = fgetc(fp);
     }
     fclose(fp);
     
@@ -208,6 +208,27 @@ void write_page(void *gpio, char *filename, uint32_t page, uint32_t length){
 
 
 void write_file(void *gpio, char *filename, uint32_t page, uint32_t length){
+    FILE *fp;
+    fp = fopen(filename, "rb");
+    if(fp == NULL){
+        printf("Unable to open file %s\n", filename);
+        exit(1);
+    }
+    if(length == 0){ 
+        printf("length = 0, nothing to write.\n"); 
+        exit(1);
+    }
+    printf("Writing file: %s of length: %d page: %d from: 0x%08X to: 0x%08X\n", filename, length, page, page * PAGESIZE, page * PAGESIZE + length);
+    
+    /* reading file data */
+    int i = 0;
+    while(i < length){
+        char c = fgetc(fp);
+        if(feof(fp)) break;
+        printf("%i %c\n", i, c);
+        i++;
+    }
+    fclose(fp);
     
 }
 
