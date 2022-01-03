@@ -1,6 +1,14 @@
 # malina-bit-banging
 Raspberry (malina) 3b gpio bit-banging programmer
 
+## Download
+```
+git clone https://github.com/legale/malina-bit-banging.git 
+cd malina-bit-banging
+git submodule init
+git submodule update
+```
+
 ## Compile
 ```gcc yarpio/yarpio.c direct5.c -o bitbanging```
 
