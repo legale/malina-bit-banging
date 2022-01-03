@@ -1,3 +1,6 @@
+/* Raspberry Pi (malina) NAND flash bit-banging programmer
+*  <malina.h>
+*/
 #include <stdint.h>
 
 #ifdef DEBUG

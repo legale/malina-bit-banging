@@ -10,7 +10,7 @@ git submodule update
 ```
 
 ## Compile
-```gcc yarpio/yarpio.c direct5.c -o bitbanging```
+```gcc -O2 yarpio/yarpio.c malina.c -o build/bitbanging```
 
 ## Use example
 ### help

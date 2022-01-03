@@ -1,5 +1,5 @@
-/* iARPIGIO based Raspberry Pi  nand flash bit-bang programmer
- * <bit-bang.c>
+/* Raspberry Pi (malina) NAND flash bit-banging programmer
+ * <malina.c>
  *
  * Copyright (c) 2021, legale <legale.legale@gmail.com>
  */
@@ -14,7 +14,7 @@
 #include <string.h>
 
 
-#include "direct5.h"
+#include "malina.h"
 #include "yarpio/yarpio.h"
 #include "samsung_nand.h"
 
