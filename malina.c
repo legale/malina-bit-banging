@@ -28,6 +28,7 @@ const char *commands[] = {
 	"read_page [page]",
     "write_file [filename] [from page] [length]", 
     "erase_block [block]",
+    "erase_flash [from_offset] [to_offset]",
     "pud_down [pin]", "pud_up [pin]", "in [pin]", "out [pin]", 
     "high [pin]", "low [pin]", "switch [pin]", "--help", "-h"
 };
@@ -58,6 +59,7 @@ int main(int argc, char **argv){
 	else if (strcmp("read_data", argv[i]) == 0 && (i + 2) < argc){ read_data(gpio, atoi(argv[++i]), atoi(argv[++i])); }
     else if (strcmp("read_page", argv[i]) == 0 && (i + 1) < argc){ read_page(gpio, atoi(argv[++i])); }
     else if (strcmp("erase_block", argv[i]) == 0 && (i + 1) < argc){ erase_block(gpio, atoi(argv[++i])); }
+    else if (strcmp("erase_flash", argv[i]) == 0 && (i + 2) < argc){ erase_flash(atoi(argv[++i]), atoi(argv[++i])); }
     else if (strcmp("pud_off", argv[i]) == 0 && (i + 1) < argc){ pud_off(gpio, atoi(argv[++i])); }
 	else if (strcmp("pud_down", argv[i]) == 0  && (i + 1) < argc){ pud_down(gpio, atoi(argv[++i])); }
 	else if (strcmp("pud_up", argv[i]) == 0 && (i + 1) < argc){ pud_up(gpio, atoi(argv[++i])); }
@@ -269,8 +271,12 @@ void erase_block(void *gpio, uint32_t block){
         page & 0xff, /* first byte */
         page >> 8 & 0xff /* second byte */
     };
-    printf("Erasing block: %d of length: %d page from: %d to: %d from: 0x%08X to: 0x%08X\n", block,
-            block * BLOCKSIZE, page, page + PAGES_PER_BLOCK, page * PAGESIZE, (page + PAGES_PER_BLOCK) * PAGESIZE);
+    uint16_t to_page = page + PAGES_PER_BLOCK; 
+    size_t from_offset = page * PAGESIZE;
+    size_t to_offset = from_offset + BLOCKSIZE;
+
+    printf("Erasing block: %d of length: %d page from: %d to: %d from: 0x%08X to: 0x%08X\n", \
+            block, block * BLOCKSIZE, page, to_page, (uint32_t)from_offset, (uint32_t)to_offset);
 
     all_out(gpio);
     GPIO_CLR(gpio);
@@ -286,3 +292,12 @@ void erase_block(void *gpio, uint32_t block){
 void read_data(void *gpio, uint32_t offset, uint32_t length){
 }
 
+int erase_flash(size_t from_offset, size_t to_offset){
+    /* Offsets must be multiples of block size */
+    if(from_offset % BLOCKSIZE != 0 || to_offset % BLOCKSIZE != 0){
+        printf("Error: from_offset: 0x%08X and to_offset: 0x%08X is not multiple of block size: 0x%08X\n", (uint32_t)from_offset, \
+                (uint32_t)to_offset, (uint32_t)BLOCKSIZE);
+        exit(1);
+    }
+    return 0;
+}
