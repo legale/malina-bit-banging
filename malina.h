@@ -23,6 +23,7 @@ void read_id(void *gpio);
 void write_page(void *gpio, char *filename, uint32_t page, uint32_t length);
 void write_file(void *gpio, char *pagebuf, uint32_t page, size_t length);
 void read_page(void *gpio, uint32_t page);
+int read_page_internal(uint8_t *addr, uint32_t length);
 int flash_dump(size_t offset, size_t length);
 void erase_block(void *gpio, uint32_t block);
 int erase_flash(size_t from_offset, size_t to_offset);

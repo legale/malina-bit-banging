@@ -5,7 +5,7 @@ NAME = bitbanging
 LIBS  = -lm
 
 #Compiler flags
-CFLAGS = -Wall -O2
+CFLAGS = 
 
 #Compiler
 CC = gcc
@@ -13,10 +13,19 @@ CC = gcc
 #SRC=$(wildcard *.c)
 SRC = malina.c yarpio/yarpio.c
 
-all: $(NAME)
+all: bin
+all: CFLAGS += -O2
 
 debug: CFLAGS += -DDEBUG -g
-debug: all
+debug: bin
+
+noO: CFLAGS += -O0
+noO: bin
+
+warn: CFLAGS += -Wall
+warn: bin
+
+bin: $(NAME)
 
 $(NAME): $(SRC)
 		$(CC) $(CFLAGS) $(LIBS) $^ -o build/$@  

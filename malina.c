@@ -162,7 +162,6 @@ void write_page(void *gpio, char *pagebuf, uint32_t page, uint32_t length){
 
     printf("Writing page: %d from: 0x%08X to: 0x%08X\n", page, page * PAGESIZE, page * PAGESIZE + length);
     
-
     /* convert page to address */
     uint8_t addr[4] = {
             0,
@@ -170,9 +169,7 @@ void write_page(void *gpio, char *pagebuf, uint32_t page, uint32_t length){
             page & 0xff,
             page >> 8 & 0xff
     };
-    for(int i = 0; i < 4; i++){
-        DEBUG_PRINT("%d 0x%02X\n", i, addr[i]);
-    }
+
     
     nand_rw_mode(gpio, 1); /* enable rw mode. WP pin high */
 
@@ -208,9 +205,9 @@ void write_file(void *gpio, char *filename, uint32_t page, size_t length){
     }
     if(length == 0){ 
         printf("Error: length = 0, nothing to write.\n"); 
-        exit(1);
+        exit(1);\
     }
-    /* get file statistics */
+    /* get file status */
     int fd = fileno(fp);
     fstat(fd, &st);
     if(st.st_size < length){
@@ -255,21 +252,42 @@ void read_page(void *gpio, uint32_t page){
     nand_command_send(gpio, 0x0); /* read command first cycle */
     nand_address_send(gpio, (uint8_t *)&addr, 4); /* address to read */
     nand_command_send(gpio, 0x30); /* read command second cycle */
-    GPIO_SET(gpio, CLE, 0);    
 
     GPIO_IN_BYTE(gpio, IO0);    
     nsleep(tWHR); /* time WE high to RE low */
     for (int i = 0; i < PAGESIZE; i++){
-        printf("%c", nand_read_byte(gpio));
+            printf("%c", nand_read_byte(gpio));
     }
 }
 
 int flash_dump(size_t offset, size_t length){
+    #ifdef DEBUG
+        setbuf(stdout, NULL);
+    #endif
+
+    if(length == 0){ 
+        printf("Error: length = 0, nothing to read.\n"); 
+        exit(1);
+    }
+    /* check offset bounds */
+    if(offset >= TOTALSIZE){
+        printf("Error: offset 0x%08X must be lower than total size: 0x%08X\n", (uint32_t)offset, (uint32_t)TOTALSIZE);
+        exit(1);
+    }
+    /* check max read length */
+    size_t max_length = TOTALSIZE - offset;
+    if(max_length < length){
+        PRINTER("Warning: length %lu (0x%08X) is longer than maximum length %lu (0x%08X). New lenth is set to: %lu", \
+                length, (uint32_t)length, max_length, (uint32_t)max_length, max_length);
+        length = max_length;
+    }
+
     uint16_t page = offset / PAGESIZE; /* row */
     uint16_t inpage_offset = offset % PAGESIZE; /* col */
-    int pagesleft = length / PAGESIZE + 1;
-    fprintf(stderr, "Reading from page: %d to page: %d offset from: 0x%08X offset to: 0x%08X\n", \
-            page, page + pagesleft, page * PAGESIZE, page * PAGESIZE + (uint32_t)length); 
+    int pagesleft = length / PAGESIZE;
+    if(length % PAGESIZE != 0) pagesleft += 1;
+    PRINTER("Reading: length: %lu pages: %d from page: %d to page: %d offset from: 0x%08X offset to: 0x%08X\n", \
+            length, pagesleft, page, page + pagesleft - 1, page * PAGESIZE, page * PAGESIZE + (uint32_t)length); 
     
     /* Page_to_address. First address with possible inpage offset */
      uint8_t addr[4] = {
@@ -278,7 +296,6 @@ int flash_dump(size_t offset, size_t length){
         page & 0xff, /* page (row) first byte */
         page >> 8 & 0xff /* page (row) second byte */
     };
-    DEBUG_PRINT("address col: %d row: %d \n", (uint16_t)addr[0], (uint16_t)addr[2]);
 
     /* Prepare to read */
     all_out(gpio);
@@ -288,17 +305,12 @@ int flash_dump(size_t offset, size_t length){
 
     /*read pages cycle */
     while(pagesleft--){
-        fprintf(stderr, "Reading page: %d from: 0x%08X to: 0x%08X\n", page, page * PAGESIZE, page * PAGESIZE + PAGESIZE); 
-        nand_command_send(gpio, 0x0); /* read command first cycle */
-        nand_address_send(gpio, (uint8_t *)&addr, 4); /* address to read */
-        nand_command_send(gpio, 0x30); /* read command second cycle */
-        GPIO_SET(gpio, CLE, 0);    
-
-        GPIO_IN_BYTE(gpio, IO0);    
-        nsleep(tWHR); /* time WE high to RE low */
-        for (int i =0; length && i < PAGESIZE; length--){
-            printf("%c", nand_read_byte(gpio));
-        }
+        PRINTER("\nReading page: %d from: 0x%08X to: 0x%08X\n", page, page * PAGESIZE, page * PAGESIZE + PAGESIZE); 
+     
+        uint32_t readsize = MIN(length, PAGESIZE);
+        read_page_internal((uint8_t *)&addr, readsize);
+        length -= readsize;
+        
         page++;
         /* next address */
         addr[0] = 0;
@@ -306,6 +318,22 @@ int flash_dump(size_t offset, size_t length){
         addr[2] = page & 0xff; /* page (row) first byte */
         addr[3] = page >> 8 & 0xff; /* page (row) second byte */
     }
+    return 0;
+}
+
+int read_page_internal(uint8_t *addr, uint32_t length){
+    GPIO_OUT_BYTE(gpio, IO0);
+    nand_command_send(gpio, 0x0); /* read command first cycle */
+    nand_address_send(gpio, addr, 4); /* address to read */
+    nand_command_send(gpio, 0x30); /* read command second cycle */
+
+    GPIO_IN_BYTE(gpio, IO0); /* switch data pins to recieve data */   
+    nsleep(tWHR); /* time WE high to RE low */
+    int i = 0;
+    while(i++ < PAGESIZE && length--){
+       printf("%c", nand_read_byte(gpio));
+    }
+    /* write NULL char at the end */
     return 0;
 }
 
