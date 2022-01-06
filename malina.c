@@ -27,6 +27,7 @@ const char *commands[] = {
 	"read_page [page]",
     "flash_dump [offset] [length]",
     "write_file [filename] [from page] [length]", 
+    "write_file [filename] [page] [length]", 
     "erase_block [block]",
     "erase_flash [from_offset] [to_offset]",
     "pud_off [pin]", "pud_down [pin]", "pud_up [pin]", "in [pin]", "out [pin]", 
@@ -37,7 +38,7 @@ const int commands_size = sizeof commands / sizeof commands[0];
 void help(){
 	printf("Available commands: %d\n", commands_size);
     for(int i = 0; i < commands_size; i++){
-        printf("%s\n", commands[i]);
+        PRINTER("%s\n", commands[i]);
     }
 }
  
@@ -55,7 +56,8 @@ int main(int argc, char **argv){
 	else if (strcmp("speed_test", argv[i]) == 0){ speed_test(gpio); }
 	else if (strcmp("blink", argv[i]) == 0 && (i + 2) < argc){ blink(gpio, atoi(argv[++i]), strtoul(argv[++i], NULL,10)); } 
 	else if (strcmp("read_id", argv[i]) == 0){ read_id(gpio); }
-	else if (strcmp("write_file", argv[i]) == 0 && (i + 2) < argc){ write_file(gpio, argv[++i], atoi(argv[++i]), atoi(argv[++i])); }
+	else if (strcmp("write_file", argv[i]) == 0 && (i + 2) < argc){ write_file(argv[++i], atoi(argv[++i]), atoi(argv[++i])); }
+	else if (strcmp("write_page", argv[i]) == 0 && (i + 2) < argc){ write_page(argv[++i], atoi(argv[++i]), atoi(argv[++i])); }
     else if (strcmp("read_page", argv[i]) == 0 && (i + 1) < argc){ read_page(gpio, atoi(argv[++i])); }
 	else if (strcmp("flash_dump", argv[i]) == 0 && (i + 2) < argc){ flash_dump(atoi(argv[++i]), atoi(argv[++i])); }
     else if (strcmp("erase_block", argv[i]) == 0 && (i + 1) < argc){ erase_block(gpio, atoi(argv[++i])); }
@@ -70,7 +72,7 @@ int main(int argc, char **argv){
 	else if (strcmp("switch", argv[i]) == 0 && (i + 1) < argc){ gpio_switch(gpio, atoi(argv[++i])); }
 	else if (strcmp("-h", argv[i]) == 0) {help(); }
 	else if (strcmp("--help", argv[i]) == 0) {help(); }
-	else 	{printf("%s command not found\n", argv[i]);}
+	else 	{PRINTER("%s command not found\n", argv[i]);}
   }
   return 0;
 }
@@ -147,20 +149,78 @@ void read_id(void *gpio){
     nsleep(tWHR); /* delay between WE high and RE low */
     for(int i = 0; i < 5; i++){
         byte = nand_read_byte(gpio);
-        printf("%i 0x%02X\n", i, byte);
+        PRINTER("%i 0x%02X\n", i, byte);
     }
     GPIO_LOW(gpio, CE); /* Chip Enabled low */
 }
 
+
 /* function to write nand page from file */
-void write_page(void *gpio, char *pagebuf, uint32_t page, uint32_t length){
+void write_page(char *filename, uint32_t page, uint32_t length){
     /* set gpio out */
     all_out(gpio);
     /* standby mode. CE high */
     GPIO_HIGH(gpio, CE);
     GPIO_IN(gpio, RB); /* set Read/Busy pin in */
 
-    printf("Writing page: %d from: 0x%08X to: 0x%08X\n", page, page * PAGESIZE, page * PAGESIZE + length);
+    uint8_t byte = 0;
+    FILE *fp;
+    fp = fopen(filename, "rb");
+    if(fp == NULL){
+            printf("Unable to open file %s\n", filename);
+                exit(1);
+    }
+    if(length == 0){ 
+            printf("length = 0, nothing to write.\n"); 
+                exit(1);
+    }
+    printf("Writing file: %s of length: %d page: %d from: 0x%08X to: 0x%08X\n", filename, length, page, page * PAGESIZE, page * PAGESIZE + length);
+
+
+    /* convert page to address */
+    uint8_t addr[4] = {
+        0,
+        0,
+        page & 0xff,
+        page >> 8 & 0xff
+    };
+    for(int i = 0; i < 4; i++){
+        DEBUG_PRINT("%d 0x%02X\n", i, addr[i]);
+    }
+
+    nand_rw_mode(gpio, 1); /* enable rw mode. WP pin high */
+
+    nand_command_send(gpio, 0x80); /* data input command. 0x80 */
+    nand_address_send(gpio, (uint8_t *)&addr, 4);
+
+    nsleep(tADL); /* delay Address Data Loading  */
+
+    /* send data */
+    int i = 0;
+    while(i < length){
+            byte = fgetc(fp);
+                if(feof(fp)) break;
+                    nand_write_byte(gpio, byte);
+                        DEBUG_PRINT("%d '%c' \n", i++, byte);
+    }
+    fclose(fp);
+
+    nand_command_send(gpio, 0x10); /*program command. 0x10 */
+    nsleep(tWB + tPROG);  /* time WE high to busy + program time */
+
+    /* get status */
+    printf("Program status: 0x%02X\n", nand_read_status(gpio));
+}
+
+/* function to write nand page from file */
+void write_page_internal(char *pagebuf, uint32_t page, uint32_t length){
+    /* set gpio out */
+    all_out(gpio);
+    /* standby mode. CE high */
+    GPIO_HIGH(gpio, CE);
+    GPIO_IN(gpio, RB); /* set Read/Busy pin in */
+
+    PRINTER("Writing page: %d from: 0x%08X to: 0x%08X\n", page, page * PAGESIZE, page * PAGESIZE + length);
     
     /* convert page to address */
     uint8_t addr[4] = {
@@ -182,36 +242,35 @@ void write_page(void *gpio, char *pagebuf, uint32_t page, uint32_t length){
     int i = 0;
     while(i < length){
         nand_write_byte(gpio, pagebuf[i++]);
-        DEBUG_PRINT("%d '%c' \n", i, pagebuf[i]);
     }
     
     nand_command_send(gpio, 0x10); /*program command. 0x10 */
     nsleep(tWB + tPROG);  /* time WE high to busy + program time */
 
     /* get status */
-    printf("Program status: 0x%02X\n", nand_read_status(gpio));
+    PRINTER("Program status: 0x%02X\n", nand_read_status(gpio));
 }
 
 
-void write_file(void *gpio, char *filename, uint32_t page, size_t length){
+void write_file(char *filename, uint32_t page, size_t length){
     FILE *fp;
     char pagebuffer[PAGESIZE + 1];
     char *pagebuf = pagebuffer;
     struct stat st;
     fp = fopen(filename, "rb");
     if(fp == NULL){
-        printf("Error: unable to open file %s\n", filename);
+        PRINTER("Error: unable to open file %s\n", filename);
         exit(1);
     }
     if(length == 0){ 
-        printf("Error: length = 0, nothing to write.\n"); 
+        PRINTER("Error: length = 0, nothing to write.\n"); 
         exit(1);\
     }
     /* get file status */
     int fd = fileno(fp);
     fstat(fd, &st);
     if(st.st_size < length){
-        printf("Warning: file: %s length: %lu is less than passed length to write (%lu). New length is set to %lu\n", filename, (size_t)st.st_size, \
+        PRINTER("Warning: file: %s length: %lu is less than passed length to write (%lu). New length is set to %lu\n", filename, (size_t)st.st_size, \
                 length, (size_t)st.st_size);
         length = st.st_size;
     }
@@ -226,7 +285,7 @@ void write_file(void *gpio, char *filename, uint32_t page, size_t length){
         readsize = MIN(bytesleft, PAGESIZE);
         fgets(pagebuf, readsize + 1, fp);
         DEBUG_PRINT("page %d size: %d: data: %s\n", page, readsize, pagebuf);
-        write_page(gpio, pagebuf, page++, readsize);
+        write_page_internal(pagebuf, page++, readsize);
         bytesleft -= readsize;
         DEBUG_PRINT("bytesleft: %lu\n", bytesleft);
         if(!bytesleft) break;
@@ -271,7 +330,7 @@ int flash_dump(size_t offset, size_t length){
     }
     /* check offset bounds */
     if(offset >= TOTALSIZE){
-        printf("Error: offset 0x%08X must be lower than total size: 0x%08X\n", (uint32_t)offset, (uint32_t)TOTALSIZE);
+        PRINTER("Error: offset 0x%08X must be lower than total size: 0x%08X\n", (uint32_t)offset, (uint32_t)TOTALSIZE);
         exit(1);
     }
     /* check max read length */
@@ -348,7 +407,7 @@ void erase_block(void *gpio, uint32_t block){
     size_t from_offset = page * PAGESIZE;
     size_t to_offset = from_offset + BLOCKSIZE;
 
-    printf("Erasing block: %d of length: %d page from: %d to: %d from: 0x%08X to: 0x%08X\n", \
+    PRINTER("Erasing block: %d of length: %d page from: %d to: %d from: 0x%08X to: 0x%08X\n", \
             block, BLOCKSIZE, page, to_page, (uint32_t)from_offset, (uint32_t)to_offset);
 
     all_out(gpio);
@@ -360,13 +419,13 @@ void erase_block(void *gpio, uint32_t block){
     nand_command_send(gpio, 0xd0); /*erase block second command */
     nsleep(tWB + tBERS); /* time WE high to busy + time block erase */
 
-    printf("erase status: 0x%02X\n", nand_read_status(gpio));
+    PRINTER("erase status: 0x%02X\n", nand_read_status(gpio));
 }
 
 int erase_flash(size_t from_offset, size_t to_offset){
     /* Offsets must be multiples of block size */
     if(from_offset % BLOCKSIZE != 0 || to_offset % BLOCKSIZE != 0){
-        printf("Error: from_offset: 0x%08X and to_offset: 0x%08X is not multiple of block size: 0x%08X\n", (uint32_t)from_offset, \
+        PRINTER("Error: from_offset: 0x%08X and to_offset: 0x%08X is not multiple of block size: 0x%08X\n", (uint32_t)from_offset, \
                 (uint32_t)to_offset, (uint32_t)BLOCKSIZE);
         return 1;
     }
