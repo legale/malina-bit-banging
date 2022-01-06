@@ -198,10 +198,10 @@ void write_page(char *filename, uint32_t page, uint32_t length){
     /* send data */
     int i = 0;
     while(i < length){
-            byte = fgetc(fp);
-                if(feof(fp)) break;
-                    nand_write_byte(gpio, byte);
-                        DEBUG_PRINT("%d '%c' \n", i++, byte);
+        byte = fgetc(fp);
+        if(feof(fp)) break;
+        nand_write_byte(gpio, byte);
+        DEBUG_PRINT("%d '%c' \n", i++, byte);
     }
     fclose(fp);
 
@@ -283,7 +283,7 @@ void write_file(char *filename, uint32_t page, size_t length){
     int readsize;
     while(1){
         readsize = MIN(bytesleft, PAGESIZE);
-        fgets(pagebuf, readsize + 1, fp);
+        fread(pagebuf, 1, readsize, fp);
         DEBUG_PRINT("page %d size: %d: data: %s\n", page, readsize, pagebuf);
         write_page_internal(pagebuf, page++, readsize);
         bytesleft -= readsize;
