@@ -276,7 +276,7 @@ void erase_block(void *gpio, uint32_t block){
     size_t to_offset = from_offset + BLOCKSIZE;
 
     printf("Erasing block: %d of length: %d page from: %d to: %d from: 0x%08X to: 0x%08X\n", \
-            block, block * BLOCKSIZE, page, to_page, (uint32_t)from_offset, (uint32_t)to_offset);
+            block, BLOCKSIZE, page, to_page, (uint32_t)from_offset, (uint32_t)to_offset);
 
     all_out(gpio);
     GPIO_CLR(gpio);
@@ -297,7 +297,12 @@ int erase_flash(size_t from_offset, size_t to_offset){
     if(from_offset % BLOCKSIZE != 0 || to_offset % BLOCKSIZE != 0){
         printf("Error: from_offset: 0x%08X and to_offset: 0x%08X is not multiple of block size: 0x%08X\n", (uint32_t)from_offset, \
                 (uint32_t)to_offset, (uint32_t)BLOCKSIZE);
-        exit(1);
+        return 1;
+    }
+    uint32_t block = from_offset / BLOCKSIZE;
+    uint32_t blocksleft = (to_offset - from_offset) / BLOCKSIZE;
+    while(blocksleft--){
+        erase_block(gpio, block++);
     }
     return 0;
 }
