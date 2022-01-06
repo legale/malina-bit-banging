@@ -5,10 +5,13 @@
  */
 
 #include <stdio.h>
+int fileno(FILE *stream); /* declare fileno() to get file descriptor from FILE pointer */
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <stdint.h> /* integer types uint* */
 #include <time.h> /* clock() nanosleep() */
 #include <string.h>
@@ -22,9 +25,8 @@ const char *commands[] = {
 	"stat", "all_in", "all_out", "speed_test", "blink [pin] [delay]", 
     "read_id", 
     "read_data [offset] [length]", "pud_off [pin]",
-	"write_page [filename] [page] [length]",
 	"read_page [page]",
-    "write_file [filename] [page] [length]", 
+    "write_file [filename] [from page] [length]", 
     "erase_block [block]",
     "pud_down [pin]", "pud_up [pin]", "in [pin]", "out [pin]", 
     "high [pin]", "low [pin]", "switch [pin]", "--help", "-h"
@@ -46,13 +48,12 @@ int main(int argc, char **argv){
   if (argc == 1) help(); 
   for (int i = 1; i < argc; i++){
 	DEBUG_PRINT("arg %d: %s\n", i, argv[i]);
-	if      (strcmp("stat", argv[i])  == 0)  { stat(gpio); }
+	if      (strcmp("stat", argv[i])  == 0)  { status(gpio); }
 	else if (strcmp("all_in", argv[i]) == 0) { all_in(gpio); }
 	else if (strcmp("all_out", argv[i]) == 0) { all_out(gpio); }
 	else if (strcmp("speed_test", argv[i]) == 0){ speed_test(gpio); }
 	else if (strcmp("blink", argv[i]) == 0 && (i + 2) < argc){ blink(gpio, atoi(argv[++i]), strtoul(argv[++i], NULL,10)); } 
 	else if (strcmp("read_id", argv[i]) == 0){ read_id(gpio); }
-	else if (strcmp("write_page", argv[i]) == 0 && (i + 2) < argc){ write_page(gpio, argv[++i], atoi(argv[++i]), atoi(argv[++i])); }
 	else if (strcmp("write_file", argv[i]) == 0 && (i + 2) < argc){ write_file(gpio, argv[++i], atoi(argv[++i]), atoi(argv[++i])); }
 	else if (strcmp("read_data", argv[i]) == 0 && (i + 2) < argc){ read_data(gpio, atoi(argv[++i]), atoi(argv[++i])); }
     else if (strcmp("read_page", argv[i]) == 0 && (i + 1) < argc){ read_page(gpio, atoi(argv[++i])); }
@@ -150,25 +151,14 @@ void read_id(void *gpio){
 }
 
 /* function to write nand page from file */
-void write_page(void *gpio, char *filename, uint32_t page, uint32_t length){
+void write_page(void *gpio, char *pagebuf, uint32_t page, uint32_t length){
     /* set gpio out */
     all_out(gpio);
     /* standby mode. CE high */
     GPIO_HIGH(gpio, CE);
     GPIO_IN(gpio, RB); /* set Read/Busy pin in */
 
-    uint8_t byte = 0;
-    FILE *fp;
-    fp = fopen(filename, "rb");
-    if(fp == NULL){
-        printf("Unable to open file %s\n", filename);
-        exit(1);
-    }
-    if(length == 0){ 
-        printf("length = 0, nothing to write.\n"); 
-        exit(1);
-    }
-    printf("Writing file: %s of length: %d page: %d from: 0x%08X to: 0x%08X\n", filename, length, page, page * PAGESIZE, page * PAGESIZE + length);
+    printf("Writing page: %d from: 0x%08X to: 0x%08X\n", page, page * PAGESIZE, page * PAGESIZE + length);
     
 
     /* convert page to address */
@@ -192,12 +182,9 @@ void write_page(void *gpio, char *filename, uint32_t page, uint32_t length){
     /* send data */
     int i = 0;
     while(i < length){
-        byte = fgetc(fp);
-        if(feof(fp)) break;
-        nand_write_byte(gpio, byte);
-        DEBUG_PRINT("%d '%c' \n", i++, byte);
+        nand_write_byte(gpio, pagebuf[i++]);
+        DEBUG_PRINT("%d '%c' \n", i, pagebuf[i]);
     }
-    fclose(fp);
     
     nand_command_send(gpio, 0x10); /*program command. 0x10 */
     nsleep(tWB + tPROG);  /* time WE high to busy + program time */
@@ -207,26 +194,43 @@ void write_page(void *gpio, char *filename, uint32_t page, uint32_t length){
 }
 
 
-void write_file(void *gpio, char *filename, uint32_t page, uint32_t length){
+void write_file(void *gpio, char *filename, uint32_t page, size_t length){
     FILE *fp;
+    char pagebuffer[PAGESIZE + 1];
+    char *pagebuf = pagebuffer;
+    struct stat st;
     fp = fopen(filename, "rb");
     if(fp == NULL){
-        printf("Unable to open file %s\n", filename);
+        printf("Error: unable to open file %s\n", filename);
         exit(1);
     }
     if(length == 0){ 
-        printf("length = 0, nothing to write.\n"); 
+        printf("Error: length = 0, nothing to write.\n"); 
         exit(1);
     }
-    printf("Writing file: %s of length: %d page: %d from: 0x%08X to: 0x%08X\n", filename, length, page, page * PAGESIZE, page * PAGESIZE + length);
+    /* get file statistics */
+    int fd = fileno(fp);
+    fstat(fd, &st);
+    if(st.st_size < length){
+        printf("Warning: file: %s length: %lu is less than passed length to write (%lu). New length is set to %lu\n", filename, (size_t)st.st_size, \
+                length, (size_t)st.st_size);
+        length = st.st_size;
+    }
+
+    printf("Writing file: %s of length: %lu page: %u from: 0x%08X to: 0x%08X\n", filename, length, page, \
+            page * PAGESIZE, page * PAGESIZE + (uint32_t)length);
     
     /* reading file data */
-    int i = 0;
-    while(i < length){
-        char c = fgetc(fp);
-        if(feof(fp)) break;
-        printf("%i %c\n", i, c);
-        i++;
+    size_t bytesleft = length;
+    int readsize;
+    while(1){
+        readsize = MIN(bytesleft, PAGESIZE);
+        fgets(pagebuf, readsize + 1, fp);
+        DEBUG_PRINT("page %d size: %d: data: %s\n", page, readsize, pagebuf);
+        write_page(gpio, pagebuf, page++, readsize);
+        bytesleft -= readsize;
+        DEBUG_PRINT("bytesleft: %lu\n", bytesleft);
+        if(!bytesleft) break;
     }
     fclose(fp);
     
@@ -240,7 +244,7 @@ void read_page(void *gpio, uint32_t page){
         page & 0xff, /* page (row) first byte */
         page >> 8 & 0xff /* page (row) second byte */
     };
-    PRINTER("Reading page: %d from: 0x%08X to: 0x%08X\n", page, page * PAGESIZE, page * PAGESIZE + PAGESIZE); 
+    PRINTER("Reading page: %u from: 0x%08X to: 0x%08X\n", page, page * PAGESIZE, page * PAGESIZE + PAGESIZE); 
 
     all_out(gpio);
     GPIO_CLR(gpio);
