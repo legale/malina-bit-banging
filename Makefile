@@ -15,6 +15,9 @@ SRC = malina.c yarpio/yarpio.c
 
 all: $(NAME)
 
+debug: CFLAGS += -DDEBUG -g
+debug: all
+
 $(NAME): $(SRC)
 		$(CC) $(CFLAGS) $(LIBS) $^ -o build/$@  
 

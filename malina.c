@@ -24,12 +24,12 @@ int fileno(FILE *stream); /* declare fileno() to get file descriptor from FILE p
 const char *commands[] = {
 	"stat", "all_in", "all_out", "speed_test", "blink [pin] [delay]", 
     "read_id", 
-    "read_data [offset] [length]", "pud_off [pin]",
 	"read_page [page]",
+    "flash_dump [offset] [length]",
     "write_file [filename] [from page] [length]", 
     "erase_block [block]",
     "erase_flash [from_offset] [to_offset]",
-    "pud_down [pin]", "pud_up [pin]", "in [pin]", "out [pin]", 
+    "pud_off [pin]", "pud_down [pin]", "pud_up [pin]", "in [pin]", "out [pin]", 
     "high [pin]", "low [pin]", "switch [pin]", "--help", "-h"
 };
 const int commands_size = sizeof commands / sizeof commands[0];
@@ -56,8 +56,8 @@ int main(int argc, char **argv){
 	else if (strcmp("blink", argv[i]) == 0 && (i + 2) < argc){ blink(gpio, atoi(argv[++i]), strtoul(argv[++i], NULL,10)); } 
 	else if (strcmp("read_id", argv[i]) == 0){ read_id(gpio); }
 	else if (strcmp("write_file", argv[i]) == 0 && (i + 2) < argc){ write_file(gpio, argv[++i], atoi(argv[++i]), atoi(argv[++i])); }
-	else if (strcmp("read_data", argv[i]) == 0 && (i + 2) < argc){ read_data(gpio, atoi(argv[++i]), atoi(argv[++i])); }
     else if (strcmp("read_page", argv[i]) == 0 && (i + 1) < argc){ read_page(gpio, atoi(argv[++i])); }
+	else if (strcmp("flash_dump", argv[i]) == 0 && (i + 2) < argc){ flash_dump(atoi(argv[++i]), atoi(argv[++i])); }
     else if (strcmp("erase_block", argv[i]) == 0 && (i + 1) < argc){ erase_block(gpio, atoi(argv[++i])); }
     else if (strcmp("erase_flash", argv[i]) == 0 && (i + 2) < argc){ erase_flash(atoi(argv[++i]), atoi(argv[++i])); }
     else if (strcmp("pud_off", argv[i]) == 0 && (i + 1) < argc){ pud_off(gpio, atoi(argv[++i])); }
@@ -264,6 +264,51 @@ void read_page(void *gpio, uint32_t page){
     }
 }
 
+int flash_dump(size_t offset, size_t length){
+    uint16_t page = offset / PAGESIZE; /* row */
+    uint16_t inpage_offset = offset % PAGESIZE; /* col */
+    int pagesleft = length / PAGESIZE + 1;
+    fprintf(stderr, "Reading from page: %d to page: %d offset from: 0x%08X offset to: 0x%08X\n", \
+            page, page + pagesleft, page * PAGESIZE, page * PAGESIZE + (uint32_t)length); 
+    
+    /* Page_to_address. First address with possible inpage offset */
+     uint8_t addr[4] = {
+        inpage_offset & 0xff,
+        inpage_offset >> 8 & 0xff,
+        page & 0xff, /* page (row) first byte */
+        page >> 8 & 0xff /* page (row) second byte */
+    };
+    DEBUG_PRINT("address col: %d row: %d \n", (uint16_t)addr[0], (uint16_t)addr[2]);
+
+    /* Prepare to read */
+    all_out(gpio);
+    GPIO_CLR(gpio);
+    GPIO_HIGH(gpio, CE); /* standby mode */
+    nand_rw_mode(gpio, 0); /* enable rw mode. WP pin low */
+
+    /*read pages cycle */
+    while(pagesleft--){
+        fprintf(stderr, "Reading page: %d from: 0x%08X to: 0x%08X\n", page, page * PAGESIZE, page * PAGESIZE + PAGESIZE); 
+        nand_command_send(gpio, 0x0); /* read command first cycle */
+        nand_address_send(gpio, (uint8_t *)&addr, 4); /* address to read */
+        nand_command_send(gpio, 0x30); /* read command second cycle */
+        GPIO_SET(gpio, CLE, 0);    
+
+        GPIO_IN_BYTE(gpio, IO0);    
+        nsleep(tWHR); /* time WE high to RE low */
+        for (int i =0; length && i < PAGESIZE; length--){
+            printf("%c", nand_read_byte(gpio));
+        }
+        page++;
+        /* next address */
+        addr[0] = 0;
+        addr[1] = 0;
+        addr[2] = page & 0xff; /* page (row) first byte */
+        addr[3] = page >> 8 & 0xff; /* page (row) second byte */
+    }
+    return 0;
+}
+
 void erase_block(void *gpio, uint32_t block){
     /* block to page (row) */
     uint16_t page = block * PAGES_PER_BLOCK;
@@ -288,8 +333,6 @@ void erase_block(void *gpio, uint32_t block){
     nsleep(tWB + tBERS); /* time WE high to busy + time block erase */
 
     printf("erase status: 0x%02X\n", nand_read_status(gpio));
-}
-void read_data(void *gpio, uint32_t offset, uint32_t length){
 }
 
 int erase_flash(size_t from_offset, size_t to_offset){

@@ -19,11 +19,10 @@ void nand_rw_mode(void *gpio, int wp_pin);
 void nand_write_byte(void *gpio, uint8_t byte); 
 uint8_t nand_read_byte(void *gpio);
 uint8_t nand_read_status(void *gpio);
-
-void read_data(void *gpio, uint32_t offset, uint32_t length);
 void read_id(void *gpio);
 void write_page(void *gpio, char *filename, uint32_t page, uint32_t length);
 void write_file(void *gpio, char *pagebuf, uint32_t page, size_t length);
 void read_page(void *gpio, uint32_t page);
+int flash_dump(size_t offset, size_t length);
 void erase_block(void *gpio, uint32_t block);
 int erase_flash(size_t from_offset, size_t to_offset);
