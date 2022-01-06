@@ -40,9 +40,9 @@ void help(){
     }
 }
  
-int main(int argc, char **argv){
+static void *gpio; /* pointer to gpio */
 
-  void *gpio; /* pointer to gpio */
+int main(int argc, char **argv){
   /* prepare gpio pointer for direct register access */
   setup_io(&gpio); /* pass the pointer to gpio pointer */
   if (argc == 1) help(); 
