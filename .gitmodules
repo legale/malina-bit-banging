@@ -1,0 +1,3 @@
+[submodule "yarpio"]
+	path = yarpio
+	url = git@github.com:legale/yarpio.git
