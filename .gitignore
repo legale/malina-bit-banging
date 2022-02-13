@@ -51,9 +51,6 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-# git
-!.gitignore
-!.gitkeep
 
 # idea files
 .idea/**
@@ -65,3 +62,8 @@ build/**
 *.swp
 *.swo
 
+
+
+# git
+!**/.gitignore
+!**/.gitkeep
